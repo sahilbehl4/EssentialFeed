@@ -1,0 +1,25 @@
+{
+  "configurations" : [
+    {
+      "id" : "25867D6C-FE8B-42E1-9765-B9DBD8EB112D",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "threadSanitizerEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:EssentialFeed.xcodeproj",
+        "identifier" : "8A0347112A433146006B6BE3",
+        "name" : "EssentialFeedTests"
+      }
+    }
+  ],
+  "version" : 1
+}
