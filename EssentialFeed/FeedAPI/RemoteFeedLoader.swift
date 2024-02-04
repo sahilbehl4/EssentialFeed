@@ -16,25 +16,29 @@ final public class RemoteFeedLoader: FeedLoader {
         self.url = url
     }
 
-    public func load(completion: @escaping ((Result<[FeedItem], Swift.Error>) -> Void)) {
-        httpClient.get(from: url, completion: { [weak self] result in
-            guard self != nil else { return }
-            switch result {
-            case .failure:
-                completion(.failure(Error.connectivity))
-            case .success(let (response, data)):
-                if let feedItems = try? FeedItemsMapper.map(data, response) {
-                    completion(.success(feedItems))
-                } else {
-                    completion(.failure(Error.invalidData))
-                }
+    public func load() async throws -> [FeedImage] {
+        if let (data, response) = try? await httpClient.get(from: url) {
+            if let feedItems = try? FeedItemsMapper.map(data, response) {
+                return feedItems.toModels()
+            } else {
+                throw Error.invalidData
             }
-        })
+        } else {
+            throw Error.connectivity
+        }
     }
 
     public enum Error: Swift.Error {
         case connectivity
         case invalidData
+    }
+}
+
+private extension Array where Element == RemoteFeedItem {
+    func toModels() -> [FeedImage] {
+        return map {
+            FeedImage(id: $0.id, description: $0.description, location: $0.location, imageURL: $0.image)
+        }
     }
 }
 

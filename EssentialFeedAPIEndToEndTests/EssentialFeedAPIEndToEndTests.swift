@@ -10,31 +10,22 @@ import EssentialFeed
 
 final class EssentialFeedAPIEndToEndTests: XCTestCase {
 
-    func test_endToEndServer_matchesFixedTestAccountData() {
-        let result = getFeedResult()
-        switch result {
-        case .success(let items):
+    func test_endToEndServer_matchesFixedTestAccountData() async throws {
+        do {
+            let items = try await getFeedResult()
             XCTAssertEqual(items.count, 8)
-        default:
+        } catch {
             XCTFail()
         }
     }
 
-    private func getFeedResult(file: StaticString = #file, line: UInt = #line) -> Result<[FeedItem], Error>? {
+    private func getFeedResult(file: StaticString = #file, line: UInt = #line) async throws -> [FeedImage] {
         let testServerURL = URL(string: "https://essentialdeveloper.com/feed-case-study/test-api/feed")!
         let client = URLSessionHTTPClient()
         let loader = RemoteFeedLoader(url: testServerURL, httpClient: client)
+        
+        return try await loader.load()
 
-        let exp = expectation(description: "Wait for load completion")
-
-        var receivedResult:Result<[FeedItem], Error>?
-        loader.load { result in
-            receivedResult = result
-            exp.fulfill()
-        }
-        wait(for: [exp], timeout: 5.0)
-
-        return receivedResult
     }
 
 }

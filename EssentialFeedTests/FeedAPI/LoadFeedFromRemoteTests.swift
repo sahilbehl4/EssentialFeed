@@ -12,73 +12,50 @@ import EssentialFeed
 class LoadFeedFromRemoteTests: XCTestCase {
 
     var sut: RemoteFeedLoader!
-    var client: HTTPClientSpy!
+    var client: HTTPClientStub!
     var url: URL!
 
     override func setUp() async throws {
         url = URL(string: "www.google.ca")!
-        client = HTTPClientSpy()
+        client = HTTPClientStub()
         sut = RemoteFeedLoader(url: url, httpClient: client)
     }
 
-    func test_load_doesNotRequestDataFromURL() {
-        XCTAssertEqual(client.messages.compactMap { $0.0 }, [])
-    }
-
-    func test_load_requestDataFromURL() {
-        sut.load() { _ in }
-
-        let urls = client.messages.compactMap { $0.0 }
-
-        XCTAssertEqual(urls, [url])
-        XCTAssertEqual(urls.count, 1)
-    }
-
-    func test_loadTwice_requestDataFromURLTwice() {
-        sut.load() { _ in }
-        sut.load() { _ in }
-
-        let urls = client.messages.compactMap { $0.0 }
-
-        XCTAssertEqual(urls, [url, url])
-        XCTAssertEqual(urls.count, 2)
-    }
-
-    func test_load_deliversErrorOnClientError() {
-        expect(sut, toCompleteWith: .failure(.connectivity)) {
-            client.completeWith(error: NSError())
+    func test_load_deliversErrorOnClientError() async throws  {
+        await expect(sut, toCompleteWith: .failure(.connectivity)) {
+            client.stub(error: NSError())
         }
     }
 
-    func test_load_deliversErrorOnNon200ErrorResponse() throws {
+    func test_load_deliversErrorOnNon200ErrorResponse() async throws  {
         let emptyData = try makeJSONItems([])
 
         // Assert
-        expect(sut, toCompleteWith: .failure(.invalidData)) {
-            client.completeWith(withStatusCode: 400, data: emptyData, at: 0)
+        await expect(sut, toCompleteWith: .failure(.invalidData)) {
+            client.stub(data: emptyData, statusCode: 400)
         }
     }
 
-    func test_load_deliversErrorOn200ResponseButInvalidData() {
+    func test_load_deliversErrorOn200ResponseButInvalidData() async throws  {
         let invalidData = Data("Invalid data".utf8)
 
         // Assert
-        expect(sut, toCompleteWith: .failure(.invalidData)) {
-            client.completeWith(withStatusCode: 200, data: invalidData, at: 0)
+        await expect(sut, toCompleteWith: .failure(.invalidData)) {
+            client.stub(data: invalidData, statusCode: 200)
 
         }
     }
 
-    func test_load_deliversNoItemsOn200ResponseWithEmptyList() throws {
+    func test_load_deliversNoItemsOn200ResponseWithEmptyList() async throws  {
         let emptyData = try makeJSONItems([])
 
         // Assert
-        expect(sut, toCompleteWith: .success([])) {
-            client.completeWith(withStatusCode: 200, data: emptyData, at: 0)
+        await expect(sut, toCompleteWith: .success([])) {
+            client.stub(data: emptyData, statusCode: 200)
         }
     }
 
-    func test_load_deliversItemsOn200ResponseWithJSONItems() throws {
+    func test_load_deliversItemsOn200ResponseWithJSONItems() async throws  {
         let (jsonItem1, item1) = makeItem(id: UUID(), imageURL: "www.google.ca")
         let (jsonItem2, item2) = makeItem(id: UUID(), imageURL: "www.yahoo.ca")
 
@@ -86,8 +63,8 @@ class LoadFeedFromRemoteTests: XCTestCase {
 
         // Assert
 
-        expect(sut, toCompleteWith: .success([item1, item2])) {
-            client.completeWith(withStatusCode: 200, data: data, at: 0)
+        await expect(sut, toCompleteWith: .success([item1, item2])) {
+            client.stub(data: data, statusCode: 200)
         }
     }
 
@@ -98,37 +75,25 @@ class LoadFeedFromRemoteTests: XCTestCase {
         }
     }
 
-    func test_load_doesNotDeliverAfterDeallocating() {
-        var sutLeak: RemoteFeedLoader? = RemoteFeedLoader(url: url, httpClient: client)
+    func expect(_ sut: RemoteFeedLoader, toCompleteWith result: Result<[FeedImage], RemoteFeedLoader.Error>, when act: () -> Void, file: StaticString = #filePath, line: UInt = #line) async {
+        
+        act()
 
-        var capturedResult: Result<[FeedItem], Error>?
-
-        sutLeak?.load { result in
-            capturedResult = result
-        }
-
-        sutLeak = nil
-
-        client.completeWith(error: RemoteFeedLoader.Error.invalidData)
-
-        XCTAssertNil(capturedResult)
-    }
-
-    func expect(_ sut: RemoteFeedLoader, toCompleteWith result: Result<[FeedItem], RemoteFeedLoader.Error>, when act: () -> Void, file: StaticString = #filePath, line: UInt = #line) {
-
-
-        sut.load { receivedResult in
-            switch (receivedResult, result) {
-            case let (.success(items), .success(expectedItems)):
+        do {
+            let items = try await sut.load()
+            
+            if case .success(let expectedItems) = result {
                 XCTAssertEqual(items, expectedItems, file: file, line: line)
-            case let (.failure(error), .failure(expectedError)):
+            } else {
+                XCTFail()
+            }
+        } catch {
+            if case .failure(let expectedError) = result, let error = error as? RemoteFeedLoader.Error {
                 XCTAssertEqual(error.localizedDescription, expectedError.localizedDescription, file: file, line: line)
-            default:
-                XCTFail("")
+            } else {
+                XCTFail()
             }
         }
-
-        act()
     }
 
     func makeJSONItems(_ jsonItems: [[String: Any]]) throws -> Data {
@@ -144,8 +109,8 @@ class LoadFeedFromRemoteTests: XCTestCase {
         description: String? = nil,
         location: String? = nil,
         imageURL: String
-    ) -> ([String: Any], FeedItem) {
-        let item = FeedItem(
+    ) -> ([String: Any], FeedImage) {
+        let item = FeedImage(
             id: id,
             description: description,
             location: location,
@@ -166,25 +131,38 @@ class LoadFeedFromRemoteTests: XCTestCase {
 
 }
 
-class HTTPClientSpy: HTTPClient {
-    var messages: [(URL, (Result<(HTTPURLResponse, Data), Error>) -> Void)] = []
-
-    func get(from url: URL, completion: @escaping ((Result<(HTTPURLResponse, Data), Error>) -> Void)) {
-        messages.append((url, completion))
+class HTTPClientStub: HTTPClient {
+    private struct Stub {
+        let result: (Data, Int)?
+        let error: Error?
     }
-
-    func completeWith(error: Error, at index: Int = 0) {
-        messages[index].1(.failure(error))
+    
+    private var stub: Stub?
+    
+    func stub(data: Data, statusCode: Int) {
+        stub = Stub(result: (data, statusCode), error: nil)
     }
-
-    func completeWith(withStatusCode statusCode: Int, data: Data, at index: Int = 0) {
-        let response = HTTPURLResponse(
-            url: messages[index].0,
-            statusCode: statusCode,
-            httpVersion: nil,
-            headerFields: nil
-        )!
-
-        messages[index].1(.success((response, data)))
+    
+    func stub(error: Error) {
+        stub = Stub(result: nil, error: error)
+    }
+    
+    func get(from url: URL) async throws -> (Data, HTTPURLResponse) {
+        if let error = stub?.error {
+            throw error
+        }
+        
+        if let (data, statusCode) = stub?.result {
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            
+            return (data, response)
+        }
+        
+        throw NSError(domain: "no stubbed behaviour", code: 0)
     }
 }

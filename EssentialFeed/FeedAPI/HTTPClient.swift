@@ -8,7 +8,7 @@
 import Foundation
 
 public protocol HTTPClient {
-    func get(from url: URL, completion: @escaping ((Result<(HTTPURLResponse, Data), Error>) -> Void))
+    func get(from url: URL) async throws -> (Data, HTTPURLResponse)
 }
 
 public final class URLSessionHTTPClient: HTTPClient {
@@ -18,15 +18,17 @@ public final class URLSessionHTTPClient: HTTPClient {
         self.urlSession = urlSession
     }
 
-    public func get(from url: URL, completion: @escaping ((Result<(HTTPURLResponse, Data), Error>) -> Void)) {
-        urlSession.dataTask(with: url) { data, response, error in
-            if let error {
-                completion(.failure(error))
-            } else if let data = data, let httpResponse = response as? HTTPURLResponse {
-                completion(.success((httpResponse, data)))
-            } else {
-                completion(.failure(NSError(domain: "unexpected", code: 0)))
-            }
-        }.resume()
+    public func get(from url: URL) async throws -> (Data, HTTPURLResponse) {
+        return try await withCheckedThrowingContinuation { continuation in
+            urlSession.dataTask(with: url) { data, response, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data = data, let httpResponse = response as? HTTPURLResponse {
+                    continuation.resume(returning: (data, httpResponse))
+                } else {
+                    continuation.resume(throwing: NSError(domain: "unexpected", code: 0))
+                }
+            }.resume()
+        }
     }
 }

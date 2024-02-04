@@ -54,42 +54,19 @@ final class CacheFeedLocalTests: XCTestCase {
 
     func test_save_requestsCacheInsertion() async throws {
         let timestamp = Date()
-        let items: [FeedItem] = [createUniqueFeedItem(), createUniqueFeedItem()]
+        let items: [FeedImage] = [createUniqueFeedItem(), createUniqueFeedItem()]
+        let localItems = items.map {
+            LocalFeedImage(id: $0.id, description: $0.description, location: $0.location, url: $0.imageURL)
+        }
         sut = LocalFeedLoader(store: store, currentDate: { timestamp })
         try await sut.save(items)
 
         XCTAssertEqual(store.receivedMessages.first, .deleteCachedFeed)
-        XCTAssertEqual(store.receivedMessages.last, .insert(items, timestamp))
+        XCTAssertEqual(store.receivedMessages.last, .insert(localItems, timestamp))
 
     }
 
-    private func createUniqueFeedItem() -> FeedItem {
-        FeedItem(id: UUID(), description: nil, location: nil, imageURL: URL(string: "www.google.ca")!)
-    }
-
-    class FeedStoreSpy: FeedStore {
-        var insertErrorToThrow: NSError? = nil
-        var deleteErrorToThrow: NSError? = nil
-
-        enum ReceivedMessage: Equatable {
-            case deleteCachedFeed
-            case insert([FeedItem], Date)
-        }
-
-        private(set) var receivedMessages = [ReceivedMessage]()
-
-        func delete() async throws {
-            receivedMessages.append(.deleteCachedFeed)
-            if let deleteErrorToThrow {
-                throw deleteErrorToThrow
-            }
-        }
-
-        func insert(items: [FeedItem], timeStamp: Date) async throws {
-            receivedMessages.append(.insert(items, timeStamp))
-            if let insertErrorToThrow {
-                throw insertErrorToThrow
-            }
-        }
+    private func createUniqueFeedItem() -> FeedImage {
+        FeedImage(id: UUID(), description: nil, location: nil, imageURL: URL(string: "www.google.ca")!)
     }
 }
